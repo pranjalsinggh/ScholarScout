@@ -22,6 +22,7 @@ def main() -> None:
     assert service["healthCheckPath"] == "/api/health"
     assert service["autoDeployTrigger"] == "checksPass"
     assert service["plan"] == "free", "This release must not create a paid Render service"
+    assert "maxShutdownDelaySeconds" not in service, "Free Render services do not support custom shutdown delay"
     values = {item["key"]: item for item in service["envVars"]}
     assert values["SCHOLARSCOUT_SECRET_KEY"].get("generateValue") is True
     for key, value in {"APP_ENV": "production", "SERVE_FRONTEND": "1",
@@ -52,6 +53,11 @@ def main() -> None:
     for service in compose["services"].values():
         assert service["read_only"] is True and service["cap_drop"] == ["ALL"]
         assert "no-new-privileges:true" in service["security_opt"]
+    workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
+    for job_name, job in workflow["jobs"].items():
+        for step in job["steps"]:
+            if "run" in step:
+                assert isinstance(step["run"], str), f"{job_name}: shell commands must be YAML strings"
     if args.env_file:
         pairs = []
         for key, item in values.items():

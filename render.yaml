@@ -10,7 +10,6 @@ services:
     numInstances: 1
     autoDeployTrigger: checksPass
     healthCheckPath: /api/health
-    maxShutdownDelaySeconds: 45
     envVars:
       - key: APP_ENV
         value: production
