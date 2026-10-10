@@ -1,0 +1,90 @@
+# Free demo profile: one service/worker, bounded resources, ephemeral research.
+services:
+  - type: web
+    name: scholarscout
+    runtime: docker
+    dockerfilePath: ./Dockerfile.backend
+    dockerContext: .
+    region: singapore
+    plan: free
+    numInstances: 1
+    autoDeployTrigger: checksPass
+    healthCheckPath: /api/health
+    maxShutdownDelaySeconds: 45
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: SCHOLARSCOUT_SECRET_KEY
+        generateValue: true
+      - key: SERVE_FRONTEND
+        value: "1"
+      - key: SCHOLARSCOUT_DATA_DIR
+        value: /tmp/scholarscout
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"
+      - key: TRUST_RENDER_EDGE
+        value: "1"
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: DEMO_AUTOLOAD
+        value: "0"
+      - key: CLOUD_AI_ENABLED
+        value: "0"
+      - key: CLOUD_PROVIDER_DATA_APPROVED
+        value: "0"
+      - key: RETENTION_HOURS
+        value: "1"
+      - key: MAX_UPLOAD_MB
+        value: "10"
+      - key: MAX_REQUEST_MB
+        value: "12"
+      - key: MAX_PDF_PAGES
+        value: "80"
+      - key: MAX_PDF_TEXT_CHARS
+        value: "400000"
+      - key: MAX_PDF_CHUNKS
+        value: "800"
+      - key: MAX_SESSION_CHUNKS
+        value: "1600"
+      - key: PDF_PARSE_TIMEOUT_SECONDS
+        value: "120"
+      - key: PDF_WORKER_MEMORY_MB
+        value: "192"
+      - key: ANALYSIS_WORKERS
+        value: "1"
+      - key: MAX_PENDING_ANALYSES
+        value: "4"
+      - key: MAX_PENDING_ANALYSES_PER_OWNER
+        value: "1"
+      - key: MAX_SESSION_PAPERS
+        value: "3"
+      - key: MAX_SESSION_STORAGE_MB
+        value: "30"
+      - key: MAX_TOTAL_STORAGE_MB
+        value: "100"
+      - key: MAX_TOTAL_EXTRACTED_STORAGE_MB
+        value: "20"
+      - key: MAX_CONCURRENT_INGESTIONS
+        value: "1"
+      - key: MAX_ACTIVE_SESSIONS
+        value: "50"
+      - key: MAX_NEW_SESSIONS_PER_IP_HOUR
+        value: "30"
+      - key: MAX_CONCURRENT_REQUESTS
+        value: "8"
+      - key: MAX_CONCURRENT_REQUESTS_PER_OWNER
+        value: "2"
+      - key: INDEX_CACHE_MB
+        value: "32"
+      - key: INDEX_CACHE_OWNERS
+        value: "4"
+      - key: INDEX_BUILD_WORKERS
+        value: "1"
+      - key: TFIDF_WORD_MAX_FEATURES
+        value: "20000"
+      - key: TFIDF_CHAR_MAX_FEATURES
+        value: "25000"
+      - key: OPENALEX_MAX_CITING
+        value: "40"
+      - key: LLM_CALLS_PER_OWNER_HOUR
+        value: "12"

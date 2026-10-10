@@ -1,0 +1,48 @@
+# Backend
+backend/.venv/
+backend/data/
+backend/.env
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+**/secret.key
+*.key
+*.pem
+*.p12
+*.pfx
+*.db
+*.db-*
+*.sqlite*
+**/uploads/
+**/.venv/
+**/venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+*.local
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+*.log
+
+# Local source-document diagnostics and tooling scratch files
+corpus-inspection/
+corpus-verification.json
+
+# Local creative/development briefs and third-party demo downloads
+LAUNCH_VIDEO_PROMPT.md
+PRODUCTION_MASTER_PROMPT.md
+backend/demo_assets/*.pdf
+.render/

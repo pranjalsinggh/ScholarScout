@@ -1,0 +1,1 @@
+"""ScholarScout backend package."""

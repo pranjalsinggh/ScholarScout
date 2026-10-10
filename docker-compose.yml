@@ -1,0 +1,68 @@
+# Local preview over loopback HTTP. Public deployment is the single Render service.
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    env_file:
+      - path: backend/.env
+        required: false
+    environment:
+      APP_ENV: development
+      SERVE_FRONTEND: "0"
+      SCHOLARSCOUT_DATA_DIR: /tmp/scholarscout
+      # Only nginx is exposed to the host; this dedicated network is trusted.
+      FORWARDED_ALLOW_IPS: "*"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=1200m,mode=1777
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 160
+    restart: unless-stopped
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,mode=1777
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    mem_limit: 128m
+    pids_limit: 64
+    restart: unless-stopped
+  demo:
+    profiles: [demo]
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    env_file:
+      - path: backend/.env
+        required: false
+    environment:
+      APP_ENV: development
+      SERVE_FRONTEND: "1"
+      DEMO_AUTOLOAD: "1"
+      SCHOLARSCOUT_DATA_DIR: /tmp/scholarscout
+    ports:
+      - "127.0.0.1:8081:8000"
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=1200m,mode=1777
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 160
+    restart: unless-stopped

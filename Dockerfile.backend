@@ -1,0 +1,25 @@
+FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS frontend-build
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY frontend ./
+RUN npm run build
+
+FROM python:3.11-slim-bookworm@sha256:a36c24f9cbdf4fd0f52d67f0823eeac19c2028c637cecc392d97f980d4fec56b
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 SERVE_FRONTEND=1 \
+    FRONTEND_DIST_DIR=/app/frontend/dist SCHOLARSCOUT_DATA_DIR=/tmp/scholarscout \
+    OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+WORKDIR /app/backend
+COPY backend/requirements.txt backend/requirements.lock.txt ./
+RUN pip install --no-cache-dir --only-binary=:all: --require-hashes -r requirements.txt \
+    && useradd --system --uid 10001 --user-group --create-home scholar
+COPY backend/app ./app
+COPY backend/demo_assets ./demo_assets
+COPY --from=frontend-build /frontend/dist /app/frontend/dist
+COPY scripts/start_server.py scripts/healthcheck.py scripts/release_gate.py /app/scripts/
+USER 10001:10001
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=6s --start-period=60s --retries=3 \
+    CMD ["python", "/app/scripts/healthcheck.py"]
+CMD ["python", "/app/scripts/start_server.py"]

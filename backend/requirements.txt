@@ -1,0 +1,3 @@
+# Install the audited production lock. No optional model downloads or test tools.
+--require-hashes
+-r requirements.lock.txt
