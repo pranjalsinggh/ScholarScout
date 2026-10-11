@@ -52,13 +52,16 @@ export default function ChatView({ paperId }: { paperId: string }) {
   const activeStream = useRef<AbortController | null>(null);
   const preferencePending = useRef(false);
   const confirmedCloudAI = useRef(false);
+  const cloudPreferenceRequest = useRef<Promise<unknown> | null>(null);
 
   useEffect(() => {
     let alive = true;
     preferencePending.current = true;
     setCloudLoading(true);
     setCloudPreferenceReady(false);
-    api.get<{ enabled: boolean; available?: boolean }>("/me/cloud-ai")
+    const request = api.get<{ enabled: boolean; available?: boolean }>("/me/cloud-ai");
+    cloudPreferenceRequest.current = request;
+    request
       .then((pref) => { if (alive) { confirmedCloudAI.current = pref.enabled; setCloudAI(pref.enabled); setCloudAvailable(pref.available !== false); setCloudPreferenceReady(true); } })
       .catch(() => { if (alive) setCloudError("Could not confirm your answer mode. Select Local Evidence to continue safely."); })
       .finally(() => { if (alive) { preferencePending.current = false; setCloudLoading(false); } });
@@ -76,20 +79,30 @@ export default function ChatView({ paperId }: { paperId: string }) {
     setSuggestions(SUGGESTIONS);
     setHistoryLoading(true);
     setHistoryError("");
-    api.get<{ id: number; role: string; content: string; evidence: EvidenceCard[]; mode: string }[]>(`/chat/${paperId}/history`)
-      .then((hist) => {
+    // The free deployment admits two requests per session. Keep this view's
+    // startup reads sequential so the dashboard's preference read also fits.
+    void (async () => {
+      try { await cloudPreferenceRequest.current; }
+      catch { /* preference loading already exposes its own retry action */ }
+      if (!alive) return;
+      try {
+        const hist = await api.get<{ id: number; role: string; content: string; evidence: EvidenceCard[]; mode: string }[]>(`/chat/${paperId}/history`);
         if (alive && hist.length) {
           setMessages(hist.map((m) => ({
             id: m.id, role: m.role as "user" | "assistant", content: m.content,
             evidence: m.evidence, mode: m.mode,
           })));
         }
-      })
-      .catch(() => { if (alive) setHistoryError("Earlier questions could not load. You can still ask a new question."); })
-      .finally(() => { if (alive) setHistoryLoading(false); });
-    api.get<{ suggestions: string[] }>(`/papers/${paperId}/suggestions`)
-      .then((result) => { if (alive && result.suggestions.length) setSuggestions(result.suggestions); })
-      .catch(() => { /* the neutral starter questions remain available */ });
+      } catch {
+        if (alive) setHistoryError("Earlier questions could not load. You can still ask a new question.");
+      } finally {
+        if (alive) setHistoryLoading(false);
+      }
+      if (!alive) return;
+      api.get<{ suggestions: string[] }>(`/papers/${paperId}/suggestions`)
+        .then((result) => { if (alive && result.suggestions.length) setSuggestions(result.suggestions); })
+        .catch(() => { /* the neutral starter questions remain available */ });
+    })();
     return () => { alive = false; activeStream.current?.abort(); activeStream.current = null; };
   }, [paperId]);
 

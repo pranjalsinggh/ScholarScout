@@ -129,9 +129,14 @@ zero impact between visitors and immunity from every threat are not guarantees.
 
 ## Verification for future changes
 
-Require all CI jobs, including the actual image scan, constrained release gate
-and real server startup, to pass before subsequent deployments. Repeat live
-HTTPS/proxy, private-session and deletion checks after relevant code, domain or
-environment changes. Check idle wake-up and restart behavior when hosting
-changes; free-instance sleep and shared quotas still limit availability.
+Keep all three CI jobs required on `main`, including the actual image scan,
+constrained release gate and real server startup. `autoDeployTrigger: checksPass`
+controls ordinary automatic code deployments. Blueprint configuration changes
+can trigger a build immediately, before those checks finish; the cloud-mode
+rollout used this path. Run the local release gates before pushing configuration
+changes, and monitor every CI job and the Render build before considering the
+release verified. Repeat live HTTPS/proxy, private-session and deletion checks
+after relevant code, domain or environment changes. Check idle wake-up and restart
+behavior when hosting changes; free-instance sleep and shared quotas still limit
+availability.
 Follow [the deployment guide](DEPLOYMENT.md) for these checks and provider policy.
