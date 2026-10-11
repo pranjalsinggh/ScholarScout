@@ -78,6 +78,7 @@ jobs:
           severity: HIGH,CRITICAL
           scanners: vuln
       - name: Free-tier upload, private retrieval and erasure in the release image
+        if: ${{ !cancelled() }}
         run: >-
           docker run --rm --read-only --cap-drop ALL
           --security-opt no-new-privileges:true --pids-limit 160
@@ -86,6 +87,7 @@ jobs:
           --tmpfs /tmp:rw,noexec,nosuid,size=128m,mode=1777
           scholarscout:ci python /app/scripts/release_gate.py
       - name: Real server startup and health
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           secret=$(openssl rand -hex 32)
