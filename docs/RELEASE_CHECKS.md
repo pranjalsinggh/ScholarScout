@@ -1,8 +1,35 @@
 # Release verification
 
-Updated **10 October 2026** for the public GitHub release and Render's free
-compute profile. The local checks below passed. The actual Linux image and live
-Render deployment have separate required checks described below.
+Updated **11 October 2026**. The [public repository](https://github.com/pranjalsinggh/ScholarScout)
+is deployed on Render Free at **[scholarscout-dskr.onrender.com](https://scholarscout-dskr.onrender.com)**.
+The results below cover release commit `9014707` and the initial live verification.
+
+## Verified in GitHub CI and on Render
+
+All three jobs in [Release checks](https://github.com/pranjalsinggh/ScholarScout/actions/runs/38128516294)
+passed before deployment.
+
+| Check | Result |
+|---|---|
+| Backend, frontend and image release jobs | Passed |
+| Final application image advisory scan | Zero HIGH/CRITICAL findings with Trivy 0.74.0; no ignored findings |
+| Restricted Linux release image | Upload, private retrieval and erasure passed with 0.1 CPU / 512 MB RAM and a 192 MB parser limit |
+| Real server entrypoint and readiness | Passed with the same 0.1 CPU / 512 MB limits |
+| Initial live HTTPS/API verification | 105 checks passed: redirects, security headers, frontend assets, CORS, hidden API documentation, private document/search/chat access and erasure |
+| Two-owner live lifecycle | Bidirectional isolation passed; erasing one owner preserved the other, and both ended tokens were rejected |
+| Public 15-page demo on Render | 30 focused checks passed: on-demand arXiv fetch, all 15 pages parsed, valid source PDF, ten Evidence passages with page references, sourced local main-contribution answer and confirmed erasure/revocation |
+
+The final image uses a pinned nonroot Distroless Debian 13 base, Python 3.11.17
+and 33 hash-locked application packages. Required native libraries retain their
+Debian package records and copyright notices. The image excludes installation
+tools and server-unused terminal/GUI bindings. These are dated checks of specific
+workloads, not a proof that every PDF or traffic load fits the free service.
+
+The demo reached ready in 19.39 seconds; its 30 checks completed in 22.92 seconds
+with cloud AI and external lookups off. This is one measured run, not a latency
+guarantee. `main` requires all three CI jobs, blocks force pushes/deletion and
+allows the owner administrator to bypass. Secret scanning, push protection and
+Dependabot alerts/security updates are enabled.
 
 ## Verified locally
 
@@ -79,10 +106,11 @@ Logical user-data isolation and fair admission are tested. Shared hardware,
 network availability and provider quotas still have finite capacity; absolute
 zero impact between visitors and immunity from every threat are not guarantees.
 
-## Checks that require publication/deployment
+## Verification for future changes
 
-No Docker engine was available locally. GitHub CI is configured to build and
-scan the actual image, run the production smoke gate inside a restricted
-container and start a real server on its configured port. Require these checks
-to pass before launch. Then verify Render's live HTTPS/proxy behavior and the
-two-browser isolation/deletion flow described in [the deployment guide](DEPLOYMENT.md).
+Require all CI jobs, including the actual image scan, constrained release gate
+and real server startup, to pass before subsequent deployments. Repeat live
+HTTPS/proxy, private-session and deletion checks after relevant code, domain or
+environment changes. Check idle wake-up and restart behavior when hosting
+changes; free-instance sleep and shared quotas still limit availability.
+Follow [the deployment guide](DEPLOYMENT.md) for these checks and provider policy.

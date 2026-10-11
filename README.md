@@ -1,5 +1,9 @@
 # ScholarScout
 
+**[Live demo](https://scholarscout-dskr.onrender.com)** · **[Public repository](https://github.com/pranjalsinggh/ScholarScout)** · **[Passed release checks](https://github.com/pranjalsinggh/ScholarScout/actions/runs/38128516294)**
+
+Deployed on Render Free and verified on **11 October 2026**: all three CI jobs passed, followed by 105 live deployment checks and 30 public-demo checks covering HTTPS, private session access, local search/chat and confirmed erasure. The deployed profile uses local grounded answers; cloud synthesis remains disabled. Free hosting sleeps after 15 idle minutes and temporary research disappears on sleep, restart or deployment. See [release verification](docs/RELEASE_CHECKS.md) for the tested scope and limits.
+
 > **Research is bigger than a paper.**
 > Upload a research paper and explore the people, papers, debates, evidence and developments surrounding it.
 
