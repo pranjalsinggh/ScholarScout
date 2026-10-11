@@ -5,7 +5,7 @@ RUN npm ci --ignore-scripts
 COPY frontend ./
 RUN npm run build
 
-FROM python:3.11.17-slim-trixie@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce AS python-build
+FROM python:3.14.7-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d AS python-build
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /build
 COPY backend/requirements.txt backend/requirements.lock.txt ./
