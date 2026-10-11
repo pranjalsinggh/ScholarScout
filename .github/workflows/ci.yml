@@ -93,8 +93,8 @@ jobs:
         run: |
           secret=$(openssl rand -hex 32)
           echo "::add-mask::$secret"
-          docker run -d --name scholarscout-smoke --read-only --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 160 --memory 512m --memory-swap 512m --env-file "$RUNNER_TEMP/scholarscout-free.env" --tmpfs /tmp:rw,noexec,nosuid,size=128m,mode=1777 -e ALLOWED_HOSTS=localhost -e SCHOLARSCOUT_SECRET_KEY="$secret" -e PORT=8014 -p 127.0.0.1:8014:8014 scholarscout:ci
-          for attempt in $(seq 1 30); do
+          docker run -d --name scholarscout-smoke --read-only --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 160 --memory 512m --memory-swap 512m --cpus 0.1 --env-file "$RUNNER_TEMP/scholarscout-free.env" --tmpfs /tmp:rw,noexec,nosuid,size=128m,mode=1777 -e ALLOWED_HOSTS=localhost -e SCHOLARSCOUT_SECRET_KEY="$secret" -e PORT=8014 -p 127.0.0.1:8014:8014 scholarscout:ci
+          for attempt in $(seq 1 90); do
             if curl --fail --silent -H 'Host: localhost' http://127.0.0.1:8014/api/health; then
               exit 0
             fi

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 
 def main() -> None:
@@ -13,6 +14,7 @@ def main() -> None:
         raise ValueError("PORT must be between 1 and 65535")
     # Shared index/lifecycle state deliberately supports only one server process.
     uvicorn.run("app.main:app", host="0.0.0.0", port=port, workers=1,
+                app_dir=str(Path(__file__).resolve().parents[1] / "backend"),
                 proxy_headers=True,
                 forwarded_allow_ips=os.getenv("FORWARDED_ALLOW_IPS", "127.0.0.1"),
                 access_log=False, timeout_keep_alive=5,
