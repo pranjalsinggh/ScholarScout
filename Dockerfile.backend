@@ -5,20 +5,31 @@ RUN npm ci --ignore-scripts
 COPY frontend ./
 RUN npm run build
 
-FROM python:3.11.17-slim-trixie@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 SERVE_FRONTEND=1 \
-    FRONTEND_DIST_DIR=/app/frontend/dist SCHOLARSCOUT_DATA_DIR=/tmp/scholarscout \
-    OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
-WORKDIR /app/backend
+FROM python:3.11.17-slim-trixie@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce AS python-build
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+WORKDIR /build
 COPY backend/requirements.txt backend/requirements.lock.txt ./
 RUN apt-get update \
     && apt-get upgrade --yes --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && python -m pip install --no-cache-dir --only-binary=:all: --require-hashes -r requirements.txt \
     && python -m pip check \
-    && python -m pip uninstall --yes pip setuptools wheel \
-    && useradd --system --uid 10001 --user-group --create-home scholar
+    && python -m pip uninstall --yes pip setuptools wheel
+# Preserve package records/copyright alongside the added shared libraries.
+COPY scripts/build_runtime.py ./build_runtime.py
+RUN python build_runtime.py
+
+# A maintained runtime image without shells, package managers or mount tools.
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2
+ENV PATH=/usr/local/bin:/usr/bin:/bin \
+    LD_LIBRARY_PATH=/usr/local/lib \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 SERVE_FRONTEND=1 \
+    FRONTEND_DIST_DIR=/app/frontend/dist SCHOLARSCOUT_DATA_DIR=/tmp/scholarscout \
+    OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+COPY --from=python-build /usr/local /usr/local
+COPY --from=python-build /runtime-libs/ /
+WORKDIR /app/backend
 COPY backend/app ./app
 COPY backend/demo_assets ./demo_assets
 COPY --from=frontend-build /frontend/dist /app/frontend/dist
