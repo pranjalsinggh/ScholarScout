@@ -44,6 +44,7 @@ export default function ChatView({ paperId }: { paperId: string }) {
   const [cloudError, setCloudError] = useState("");
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState("");
+  const [historyRetry, setHistoryRetry] = useState(0);
   const [fileError, setFileError] = useState("");
   const messagesRef = useRef<HTMLDivElement>(null);
   const followBottom = useRef(true);
@@ -53,6 +54,7 @@ export default function ChatView({ paperId }: { paperId: string }) {
   const preferencePending = useRef(false);
   const confirmedCloudAI = useRef(false);
   const cloudPreferenceRequest = useRef<Promise<unknown> | null>(null);
+  const historyPending = useRef(false);
 
   useEffect(() => {
     let alive = true;
@@ -69,7 +71,6 @@ export default function ChatView({ paperId }: { paperId: string }) {
   }, [cloudRetry]);
 
   useEffect(() => {
-    let alive = true;
     activeStream.current?.abort();
     activeStream.current = null;
     followBottom.current = true;
@@ -77,6 +78,14 @@ export default function ChatView({ paperId }: { paperId: string }) {
     setLoading(false);
     setRated({});
     setSuggestions(SUGGESTIONS);
+    setHistoryLoading(true);
+    setHistoryError("");
+    return () => { activeStream.current?.abort(); activeStream.current = null; };
+  }, [paperId]);
+
+  useEffect(() => {
+    let alive = true;
+    historyPending.current = true;
     setHistoryLoading(true);
     setHistoryError("");
     // The free deployment admits two requests per session. Keep this view's
@@ -87,27 +96,36 @@ export default function ChatView({ paperId }: { paperId: string }) {
       if (!alive) return;
       try {
         const hist = await api.get<{ id: number; role: string; content: string; evidence: EvidenceCard[]; mode: string }[]>(`/chat/${paperId}/history`);
-        if (alive && hist.length) {
+        if (alive) {
+          // Replace the conversation, including an empty history. Retrying
+          // must not append another copy of previously displayed answers.
           setMessages(hist.map((m) => ({
             id: m.id, role: m.role as "user" | "assistant", content: m.content,
             evidence: m.evidence, mode: m.mode,
           })));
         }
-      } catch {
-        if (alive) setHistoryError("Earlier questions could not load. You can still ask a new question.");
+      } catch (reason) {
+        if (alive) setHistoryError(`Earlier questions could not load. ${friendlyError(reason)} You can still ask a new question.`);
       } finally {
-        if (alive) setHistoryLoading(false);
+        if (alive) { historyPending.current = false; setHistoryLoading(false); }
       }
       if (!alive) return;
       api.get<{ suggestions: string[] }>(`/papers/${paperId}/suggestions`)
         .then((result) => { if (alive && result.suggestions.length) setSuggestions(result.suggestions); })
         .catch(() => { /* the neutral starter questions remain available */ });
     })();
-    return () => { alive = false; activeStream.current?.abort(); activeStream.current = null; };
-  }, [paperId]);
+    return () => { alive = false; };
+  }, [paperId, historyRetry]);
+
+  const retryHistory = () => {
+    if (loading || historyLoading || activeStream.current || historyPending.current || cloudLoading || preferencePending.current) return;
+    historyPending.current = true;
+    setHistoryLoading(true);
+    setHistoryRetry((value) => value + 1);
+  };
 
   const selectAnswerMode = async (enabled: boolean) => {
-    if (loading || historyLoading || activeStream.current || cloudLoading || preferencePending.current) return;
+    if (loading || historyLoading || activeStream.current || historyPending.current || cloudLoading || preferencePending.current) return;
     if (enabled && !cloudAvailable) return;
     if (cloudPreferenceReady && enabled === cloudAI) {
       setCloudConsentOpen(false);
@@ -133,7 +151,7 @@ export default function ChatView({ paperId }: { paperId: string }) {
   };
 
   const requestCloudMode = () => {
-    if (loading || historyLoading || activeStream.current || cloudLoading || preferencePending.current || !cloudAvailable || cloudAI) return;
+    if (loading || historyLoading || activeStream.current || historyPending.current || cloudLoading || preferencePending.current || !cloudAvailable || cloudAI) return;
     setCloudError("");
     setCloudConsentOpen(true);
   };
@@ -151,7 +169,7 @@ export default function ChatView({ paperId }: { paperId: string }) {
 
   const send = async (text?: string) => {
     const msg = (text ?? input).trim();
-    if (msg.length < 2 || loading || historyLoading || activeStream.current || cloudLoading || preferencePending.current || !cloudPreferenceReady) return;
+    if (msg.length < 2 || loading || historyLoading || activeStream.current || historyPending.current || cloudLoading || preferencePending.current || !cloudPreferenceReady) return;
     const answerMode = confirmedCloudAI.current ? "cloud" : "local";
     followBottom.current = true;
     setInput("");
@@ -357,7 +375,12 @@ export default function ChatView({ paperId }: { paperId: string }) {
         <Chip className="hidden md:inline-flex">feedback tunes this session</Chip>
       </div>
       {feedbackError && <p className="mb-2 text-xs text-rose-300" role="alert">{feedbackError}</p>}
-      {historyError && <p className="mb-2 text-xs text-amber-200" role="status">{historyError}</p>}
+      {historyError && (
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <p className="text-xs text-amber-200" role="status">{historyError}</p>
+          <button type="button" onClick={retryHistory} disabled={loading || historyLoading || cloudBusy || cloudLoading} className="btn-ghost min-h-10 px-3 text-xs disabled:opacity-40">Retry history</button>
+        </div>
+      )}
       {fileError && <p className="mb-2 text-xs text-rose-300" role="alert">{fileError}</p>}
 
       <div className="glass-soft mb-3 p-4">

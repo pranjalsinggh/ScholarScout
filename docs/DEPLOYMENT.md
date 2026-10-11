@@ -2,7 +2,7 @@
 
 Updated **11 October 2026**. The [public repository](https://github.com/pranjalsinggh/ScholarScout) is deployed at **[scholarscout-dskr.onrender.com](https://scholarscout-dskr.onrender.com)** on Render Free. All three [release checks](https://github.com/pranjalsinggh/ScholarScout/actions/runs/38128516294) passed for commit `9014707`, followed by 105 live deployment checks and 30 public-demo checks. See [release verification](RELEASE_CHECKS.md) for the tested scope.
 
-The current Blueprint adds operator-approved, optional cloud answers. The initial live checks above used local mode; they do not establish that the new cloud deployment or credentials have been verified.
+The optional cloud update at `a3d86bd` passed all three [release jobs](https://github.com/pranjalsinggh/ScholarScout/actions/runs/38132887545) and 176 focused live checks. Both Gemini and Groq credentials/models passed readiness; the final uncached classic and streamed answers used Gemini with valid source citations. Local choice, separate visitor consent, consent withdrawal, private retrieval and independent erasure passed. See [the sanitized report](verification/cloud-modes-2026-10-11.json).
 
 ## Release design
 

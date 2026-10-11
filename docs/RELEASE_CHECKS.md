@@ -2,27 +2,63 @@
 
 Updated **11 October 2026**. The [public repository](https://github.com/pranjalsinggh/ScholarScout)
 is deployed on Render Free at **[scholarscout-dskr.onrender.com](https://scholarscout-dskr.onrender.com)**.
-The results below cover release commit `9014707` and the initial live verification.
+The cloud update below covers implementation commit `a3d86bd`; the initial release results cover `9014707`.
 
-## Cloud mode update awaiting deployment verification
+## Verified Local Evidence and Cloud AI update
 
-The current Blueprint enables operator-approved cloud answers and the
-`gemini,groq` chain. `GEMINI_API_KEY` and `GROQ_API_KEY` are declared with
-`sync: false` for private Render injection; no credentials are in source.
-Visitors retain local mode by default and must opt in before selecting a cloud
-answer. The initial live results below were measured with cloud processing off.
-They are not a verification of the new cloud configuration or provider keys.
-CI remains offline and provider-free; live opt-in, provider attribution, local
-selection and consent revocation must be checked after the new deployment.
+The cloud implementation at `a3d86bd` passed all three jobs in
+[Release checks](https://github.com/pranjalsinggh/ScholarScout/actions/runs/38132887545)
+and deployed on Render Free before the focused live verification. Gemini and
+Groq each passed a minimal credential/model readiness request without exposing
+credentials. The server uses `gemini,groq`; their Blueprint entries contain
+only key names with `sync: false`, and the values are private Render settings.
 
-The updated offline smoke gate passed **41 checks** locally with disposable
-storage and zero live cloud calls. It verifies that fresh owners start with
-cloud consent and connected lookups off, unavailable cloud requests are
-rejected, explicit local selection returns extractive answers, and the original
-private-session retrieval and erasure checks still pass. The configuration gate
-also verified the approved cloud flags, provider chain, private key descriptors
-and unchanged free-instance resource limits. Its exported container environment
-contains no provider or application-secret values.
+The [sanitized live report](verification/cloud-modes-2026-10-11.json) records
+**176 passing checks** using the public Attention Is All You Need paper and an
+independent synthetic peer document. Both uncached cloud questions returned
+`synthesized:gemini`, with valid evidence-card citations: classic in **2.72 s**,
+streamed in **2.14 s**. The public PDF parsed all 15 pages in **18.92 s**.
+The report contains no tokens, paper IDs, questions, answers, passages or keys.
+
+The live checks verified:
+
+- Fresh visitors start with Local Evidence and cloud consent off.
+- Cloud requests are rejected before consent and after consent withdrawal on both chat endpoints.
+- Opting in one visitor leaves the other visitor's preference and answers local.
+- Explicit Local bypasses a previously generated cloud answer and its cache, including streaming.
+- Foreign paper IDs cannot reveal documents, chat history or retrieval passages.
+- Erasing one session revokes its token while the peer's paper, preferences and answers remain usable; both disposable owners were erased.
+
+CI remains offline and provider-free. The backend gate passed **247 tests**
+with three optional real-PDF fixture skips and six existing API deprecation
+warnings; the live public-demo checks exercised that PDF on Render.
+The restricted release image passed **41 smoke checks** at **0.1 CPU / 512 MB**,
+plus a real-server startup/readiness probe and the HIGH/CRITICAL advisory gate.
+Frontend build, render/performance checks and dependency advisories passed.
+The exported smoke environment contains no provider or application secrets.
+
+The synthesis prompt now requires a source citation on the opening answer and
+each supporting bullet. Existing strict validation rejects missing or invalid
+citations and retains local fallback. A diagnostic before that refinement
+confirmed the fallback rejected two candidates with uncited prose rather than
+presenting them as grounded cloud answers. Streamed providers now receive the
+same bounded recent conversation as classic providers; offline payload tests
+cover all adapters. Initial chat preference, history and suggestion reads are
+sequential to fit the per-session request budget.
+
+The live browser walkthrough confirmed a Local answer, a cited Gemini answer,
+switching the same question back to Local, and restoration of both modes'
+conversation history through in-site navigation. The answer selector and
+composer were also checked at a 390-pixel mobile viewport with no horizontal
+page overflow. A separate fresh-owner API check confirmed empty history and
+correctly shaped user/assistant history after a Local answer; its disposable
+owner was erased. A transient initial history-read warning recovered on
+navigation; the chat now offers a retry action for that warning.
+
+These are dated checks, not guarantees of provider uptime, factual correctness
+or future quota availability. Local answers remain available if cloud providers
+fail or their output cannot pass the evidence checks. Free Gemini's provider
+retention and training terms still apply to cloud submissions.
 
 ## Verified in GitHub CI and on Render
 
