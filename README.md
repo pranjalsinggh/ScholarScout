@@ -2,7 +2,7 @@
 
 **[Live demo](https://scholarscout-dskr.onrender.com)** · **[Public repository](https://github.com/pranjalsinggh/ScholarScout)** · **[Passed release checks](https://github.com/pranjalsinggh/ScholarScout/actions/runs/38128516294)**
 
-Deployed on Render Free and verified on **11 October 2026**: all three CI jobs passed, followed by 105 live deployment checks and 30 public-demo checks covering HTTPS, private session access, local search/chat and confirmed erasure. The deployed profile uses local grounded answers; cloud synthesis remains disabled. Free hosting sleeps after 15 idle minutes and temporary research disappears on sleep, restart or deployment. See [release verification](docs/RELEASE_CHECKS.md) for the tested scope and limits.
+The initial Render Free release was verified on **11 October 2026**: all three CI jobs passed, followed by 105 live deployment checks and 30 public-demo checks covering HTTPS, private session access, local search/chat and confirmed erasure. The current Blueprint enables optional Gemini answers with Groq fallback when private Render credentials are configured. Visitors start with local grounded answers and choose whether to opt into cloud processing. Cloud deployment verification is tracked separately in [release verification](docs/RELEASE_CHECKS.md). Free hosting sleeps after 15 idle minutes and temporary research disappears on sleep, restart or deployment.
 
 > **Research is bigger than a paper.**
 > Upload a research paper and explore the people, papers, debates, evidence and developments surrounding it.
@@ -137,6 +137,7 @@ Copy `backend/.env.example` → `backend/.env` for local development. Provider k
 | `GROQ_API_KEY` | free-tier Groq synthesis, fallback provider (console.groq.com) |
 | `OPENAI_API_KEY` | optional third in the chain |
 | `LLM_PROVIDER_CHAIN`, `GEMINI_MODEL`, `GROQ_MODEL` | chain order & model overrides |
+| `CLOUD_AI_ENABLED`, `CLOUD_PROVIDER_DATA_APPROVED` | cloud capability and operator approval; both required in production, plus each visitor's opt-in |
 | `LLM_CALLS_PER_PROVIDER_HOUR` | maximum provider requests per process per hour (default 120) |
 | `GEMINI_INPUT_USD_PER_M`, `GEMINI_OUTPUT_USD_PER_M` | optional cost-estimate rates; equivalent `GROQ_*` and `OPENAI_*` variables are supported |
 | `NEWS_API_KEY` | news headlines tier |
@@ -216,7 +217,7 @@ The anonymous token protects one session from another; it is not an account or i
 
 ## Deployment
 
-The project includes a single-service [Render Blueprint](render.yaml) and a [deployment guide](docs/DEPLOYMENT.md). The backend Docker image serves the frontend and API on one origin, binds Render's `PORT`, and runs one non-root server worker. The Blueprint selects Render's free 512 MB compute plan with reduced upload, document, queue and index limits, a generated production secret, ephemeral anonymous data, and no persistent database or disk. Free services sleep after 15 idle minutes and lose research on sleep/restart/redeploy; this profile is for demos and small workloads. Cloud synthesis is disabled until its provider data policy has been approved by the operator; local answers remain available.
+The project includes a single-service [Render Blueprint](render.yaml) and a [deployment guide](docs/DEPLOYMENT.md). The backend Docker image serves the frontend and API on one origin, binds Render's `PORT`, and runs one non-root server worker. The Blueprint selects Render's free 512 MB compute plan with reduced upload, document, queue and index limits, a generated production secret, ephemeral anonymous data, and no persistent database or disk. Free services sleep after 15 idle minutes and lose research on sleep/restart/redeploy; this profile is for demos and small workloads. The operator has enabled cloud synthesis for this deployment with the `gemini,groq` chain. The keys must be supplied privately in Render; the Blueprint stores only their names. Each visitor starts in local mode and must opt into external processing before choosing a cloud answer. Local answers remain available independently of provider keys and quotas.
 
 GitHub Actions gates releases with secret checks, backend tests, an offline production smoke check, npm and Python advisories, frontend build/render checks, a Docker image build, a container vulnerability scan and a real server readiness probe. Base images and GitHub Actions are pinned to digests/commits; the complete production Python graph is pinned with artifact hashes. Dependabot prepares weekly dependency review updates. No GitHub repository or Render service is created by these files alone.
 

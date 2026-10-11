@@ -2,6 +2,8 @@
 
 Updated **11 October 2026**. The [public repository](https://github.com/pranjalsinggh/ScholarScout) is deployed at **[scholarscout-dskr.onrender.com](https://scholarscout-dskr.onrender.com)** on Render Free. All three [release checks](https://github.com/pranjalsinggh/ScholarScout/actions/runs/38128516294) passed for commit `9014707`, followed by 105 live deployment checks and 30 public-demo checks. See [release verification](RELEASE_CHECKS.md) for the tested scope.
 
+The current Blueprint adds operator-approved, optional cloud answers. The initial live checks above used local mode; they do not establish that the new cloud deployment or credentials have been verified.
+
 ## Release design
 
 - `render.yaml` builds `Dockerfile.backend`: the existing frontend and API share one HTTPS origin.
@@ -54,7 +56,7 @@ The repository has minimal read permissions in CI, pinned Actions commits and a 
 
 1. Connect GitHub in Render and create a **Blueprint** from this repository. Select the intended branch and review the `scholarscout` service, Singapore region and **Free / $0 compute** before creation. Stop if Render proposes paid compute, a database, a persistent disk or any other paid resource.
 2. Keep the Blueprint's single instance, generated `SCHOLARSCOUT_SECRET_KEY`, ephemeral data path and `/api/health` check. Do not attach a persistent disk or database. Render automatically sets `RENDER_EXTERNAL_HOSTNAME`; production rejects unapproved hostnames.
-3. Keep `CLOUD_AI_ENABLED=0` and `CLOUD_PROVIDER_DATA_APPROVED=0` as deployed. Local extraction and grounded answers work without provider keys. Adding keys alone does not enable cloud synthesis; follow the separate operator-approval and visitor-consent requirements below.
+3. The operator-approved cloud configuration sets `CLOUD_AI_ENABLED=1`, `CLOUD_PROVIDER_DATA_APPROVED=1` and `LLM_PROVIDER_CHAIN=gemini,groq`. Add `GEMINI_API_KEY` and `GROQ_API_KEY` privately through the service's Render Environment page. Their Blueprint entries use `sync: false`; they contain no credentials. Render prompts for these keys only at initial Blueprint creation and ignores them on later updates, so add new keys manually to the existing service. [Render's secret-value documentation](https://render.com/docs/blueprint-spec#prompting-for-secret-values) explains this behavior. Local extraction and grounded answers remain available without keys. Visitors start in local mode and must separately opt into cloud processing. To suspend cloud answers, set `CLOUD_AI_ENABLED=0` and redeploy.
 4. If using a custom domain, set `ALLOWED_HOSTS` to the exact domain names as a comma-separated list, confirm Render's TLS certificate and repeat the checks below. A custom domain can become the Host header used by health checks.
 5. The Blueprint uses `autoDeployTrigger: checksPass`: subsequent automatic deployments wait for GitHub checks. [Blueprint fields](https://render.com/docs/blueprint-spec) and [health checks](https://render.com/docs/health-checks) describe these settings.
 
@@ -80,13 +82,18 @@ The public arXiv demo passed 30 focused live checks: all 15 pages parsed, the so
 - Use two fresh browser sessions. Upload different synthetic PDFs and verify each session's library, topics, evidence, source download and Ask results contain only its own documents. Requests using the other session's document ID must fail or yield empty scoped results.
 - Confirm **End session and erase data**, the browser-exit notice and idle expiration. Ensure erasing one session leaves the other usable.
 - Fetch the public demo and use Evidence and Ask to build its private index. Inspect Render logs/metrics for memory kills, parser-budget failures and queue failures. Processing can be slower than local development.
+- In a fresh session, confirm **Local evidence** is selected and cloud consent is off. Local questions must stay extractive even after consent is enabled. Before consent, requesting a cloud answer must be rejected. After consent, a public/synthetic question should return a sourced Gemini or Groq answer with the provider identified. Turn consent off, verify cloud requests are blocked again, and verify a second session remains local throughout. Use disposable sessions, then erase them.
 - Try a PDF above 10 MB or 80 pages: rejection must preserve the existing library. Under excess load, bounded busy responses must recover without losing another visitor's data.
 - Check restart behavior: active ephemeral sessions end cleanly and the site starts a fresh empty library.
 - Let the free service idle and wake it again: a cold start should show a fresh library. Distinguish the hosting wake-up delay from an application failure.
 
-## Optional cloud answers
+## Local and optional cloud answers
 
-Operator approval and visitor opt-in are both required. Review the chosen provider's retention, training and data-control settings before adding its server-side key. [Gemini unpaid terms](https://ai.google.dev/gemini-api/terms) permit product improvement and human review of submitted content; unpaid Gemini is unsuitable for confidential research. Review [Groq data controls](https://console.groq.com/docs/your-data), including applicable retention controls. Configure a suitable provider chain, then explicitly set both cloud flags to `1`. Deleting the ScholarScout session cannot recall material already sent to a provider.
+Operator approval and visitor opt-in are both required. This deployment has operator approval for the `gemini,groq` provider chain, with privately injected server-side keys. The visitor's local/cloud answer selection controls whether a question can use a provider; enabling consent alone does not force local questions into cloud processing. Gemini is attempted first and Groq is the fallback. A provider failure or exhausted quota can produce a local fallback, which must be labeled as local in the answer rather than presented as a successful cloud answer.
+
+Review the chosen provider's retention, training and data-control settings before supplying its key. [Gemini unpaid terms](https://ai.google.dev/gemini-api/terms) permit product improvement and human review of submitted content; unpaid Gemini is unsuitable for confidential research. Review [Groq data controls](https://console.groq.com/docs/your-data), including applicable retention controls. Cloud requests send the question and selected passages to the configured providers. Deleting the ScholarScout session cannot recall material already sent to a provider.
+
+CI deliberately clears all provider keys and disables cloud access while exercising synthetic documents, fresh-session defaults and consent rejection. It makes no live provider calls. Verify configured credentials and a real opt-in answer separately after deployment without printing keys, tokens or private passages in logs.
 
 ## Maintaining the release
 

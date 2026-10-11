@@ -27,6 +27,7 @@ from app.models.entities import (ApiCache as ApiCacheRow, ChatMessage,
                                  Citation, Chunk as PaperChunk, Paper,
                                  OwnerSession, RetrievalProfile, WatchItem)
 from app.rag.answerer import answer_question, stream_answer_events
+from app.rag.llm_providers import cloud_ai_available
 from app.schemas.api import (ChatRequest, ChatResponse, CloudAIRequest, CompareRequest,
                              ComplexityResponse, DebateResponse, EvidenceCard,
                              FeedbackRequest, FeedbackResponse, GraphResponse,
@@ -423,14 +424,14 @@ def delete_paper(request: Request, paper_id: str, db: Session = Depends(get_db))
 @router.get("/me/cloud-ai")
 def cloud_ai_preference(request: Request, db: Session = Depends(get_db)):
     row = db.get(OwnerSession, request.state.owner)
-    available = settings.cloud_ai_enabled and (not settings.production or settings.cloud_provider_data_approved)
+    available = cloud_ai_available()
     return {"enabled": bool(available and row and row.cloud_ai_opt_in), "available": available}
 
 
 @router.post("/me/cloud-ai")
 def set_cloud_ai_preference(request: Request, pref: CloudAIRequest,
                             db: Session = Depends(get_db)):
-    if pref.enabled and (not settings.cloud_ai_enabled or (settings.production and not settings.cloud_provider_data_approved)):
+    if pref.enabled and not cloud_ai_available():
         raise HTTPException(409, detail="Cloud AI is unavailable on this instance. Local evidence answers remain available.")
     from app.security.session import owner_write
     with owner_write(db, request.state.owner):
@@ -530,7 +531,7 @@ def privacy_info():
                    "concurrent_analyses": settings.max_pending_analyses_per_owner},
         "provider_erasure": "Session deletion erases application data, not copies retained by external providers. Do not enable cloud AI for confidential or personal research with unpaid Gemini.",
         "revocation": "A content-free, irreversible session hash may remain to prevent an ended key from recreating data; no document or chat content is retained in that record.",
-        "cloud_ai_available": settings.cloud_ai_enabled and (not settings.production or settings.cloud_provider_data_approved),
+        "cloud_ai_available": cloud_ai_available(),
         "external_processors": [
             {"service": "OpenAlex / Crossref", "sent": "your paper's title (to match it in research databases)",
              "receives_user_content": True},
@@ -576,15 +577,27 @@ def search(request: Request, req: SearchRequest, db: Session = Depends(get_db)):
 
 
 # -------------------------------------------------------------------- chat --
+def _check_answer_mode(req: ChatRequest, owner: str) -> None:
+    """Reject a cloud choice before answering or opening an SSE response."""
+    if req.answer_mode != "cloud":
+        return
+    if not cloud_ai_available():
+        raise HTTPException(409, detail="Cloud AI is unavailable on this instance. Choose Local Evidence to continue.")
+    from app.security.session import cloud_ai_allowed
+    if not cloud_ai_allowed(owner):
+        raise HTTPException(403, detail="Enable Cloud AI for this research session before choosing cloud answers. Local Evidence remains available.")
+
+
 @router.post("/chat", response_model=ChatResponse)
 def chat(request: Request, req: ChatRequest, db: Session = Depends(get_db)):
     rate_limit(request, "chat")
     owner = request.state.owner
     token = request.state.token
     _paper_or_404(db, req.paper_id, owner)
+    _check_answer_mode(req, owner)
     db.rollback()  # Do not retain a read transaction across slow synthesis.
     ans = answer_question(req.message, paper_ids=[req.paper_id],
-                          owner=owner, token=token)
+                          owner=owner, token=token, answer_mode=req.answer_mode)
     from app.security.session import owner_write
     with owner_write(db, owner):
         _paper_or_404(db, req.paper_id, owner)
@@ -625,6 +638,7 @@ def chat_stream(request: Request, req: ChatRequest):
     db = next(get_db())
     try:
         _paper_or_404(db, req.paper_id, owner)
+        _check_answer_mode(req, owner)
     finally:
         db.close()
 
@@ -632,7 +646,7 @@ def chat_stream(request: Request, req: ChatRequest):
         yield 'data: {"type": "start"}\n\n'
         try:
             for event in stream_answer_events(req.message, paper_ids=[req.paper_id],
-                                              owner=owner, token=token):
+                                              owner=owner, token=token, answer_mode=req.answer_mode):
                 yield event
         except Exception:
             # stream_answer_events handles its own errors; this guards the pipe

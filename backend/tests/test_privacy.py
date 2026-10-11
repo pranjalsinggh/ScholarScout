@@ -182,6 +182,8 @@ def test_cloud_ai_requires_session_opt_in(monkeypatch):
     from app.config import settings
     monkeypatch.setattr(settings, "cloud_ai_enabled", True)
     monkeypatch.setattr(settings, "production", False)
+    monkeypatch.setattr(settings, "gemini_api_key", "offline-test-key")
+    monkeypatch.setattr(settings, "llm_provider_chain", "gemini,groq")
     token = "ss_cloud_test_owner"
     client = _make_client(token)
     assert client.get("/api/me/cloud-ai").json() == {"enabled": False, "available": True}

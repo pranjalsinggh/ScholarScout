@@ -35,9 +35,12 @@ export default function ChatView({ paperId }: { paperId: string }) {
   const [rated, setRated] = useState<Record<number, "up" | "down">>({});
   const [feedbackError, setFeedbackError] = useState("");
   const [cloudAI, setCloudAI] = useState(false);
-  const [cloudAvailable, setCloudAvailable] = useState(true);
+  const [cloudAvailable, setCloudAvailable] = useState(false);
   const [cloudBusy, setCloudBusy] = useState(false);
   const [cloudLoading, setCloudLoading] = useState(true);
+  const [cloudPreferenceReady, setCloudPreferenceReady] = useState(false);
+  const [cloudRetry, setCloudRetry] = useState(0);
+  const [cloudConsentOpen, setCloudConsentOpen] = useState(false);
   const [cloudError, setCloudError] = useState("");
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState("");
@@ -47,19 +50,25 @@ export default function ChatView({ paperId }: { paperId: string }) {
   const ratedRef = useRef(rated);
   ratedRef.current = rated;
   const activeStream = useRef<AbortController | null>(null);
+  const preferencePending = useRef(false);
+  const confirmedCloudAI = useRef(false);
 
   useEffect(() => {
     let alive = true;
+    preferencePending.current = true;
+    setCloudLoading(true);
+    setCloudPreferenceReady(false);
     api.get<{ enabled: boolean; available?: boolean }>("/me/cloud-ai")
-      .then((pref) => { if (alive) { setCloudAI(pref.enabled); setCloudAvailable(pref.available !== false); } })
-      .catch(() => { if (alive) setCloudError("Could not load the cloud AI preference. Local evidence remains available."); })
-      .finally(() => { if (alive) setCloudLoading(false); });
+      .then((pref) => { if (alive) { confirmedCloudAI.current = pref.enabled; setCloudAI(pref.enabled); setCloudAvailable(pref.available !== false); setCloudPreferenceReady(true); } })
+      .catch(() => { if (alive) setCloudError("Could not confirm your answer mode. Select Local Evidence to continue safely."); })
+      .finally(() => { if (alive) { preferencePending.current = false; setCloudLoading(false); } });
     return () => { alive = false; };
-  }, []);
+  }, [cloudRetry]);
 
   useEffect(() => {
     let alive = true;
     activeStream.current?.abort();
+    activeStream.current = null;
     followBottom.current = true;
     setMessages([]);
     setLoading(false);
@@ -81,21 +90,39 @@ export default function ChatView({ paperId }: { paperId: string }) {
     api.get<{ suggestions: string[] }>(`/papers/${paperId}/suggestions`)
       .then((result) => { if (alive && result.suggestions.length) setSuggestions(result.suggestions); })
       .catch(() => { /* the neutral starter questions remain available */ });
-    return () => { alive = false; activeStream.current?.abort(); };
+    return () => { alive = false; activeStream.current?.abort(); activeStream.current = null; };
   }, [paperId]);
 
-  const toggleCloudAI = async () => {
-    if (cloudBusy || cloudLoading) return;
+  const selectAnswerMode = async (enabled: boolean) => {
+    if (loading || historyLoading || activeStream.current || cloudLoading || preferencePending.current) return;
+    if (enabled && !cloudAvailable) return;
+    if (cloudPreferenceReady && enabled === cloudAI) {
+      setCloudConsentOpen(false);
+      return;
+    }
+    // This ref closes the gap before React renders the pending state: a fast
+    // second click or Enter cannot send a question with the previous consent.
+    preferencePending.current = true;
     setCloudBusy(true);
     setCloudError("");
     try {
-      const pref = await api.post<{ enabled: boolean }>("/me/cloud-ai", { enabled: !cloudAI });
+      const pref = await api.post<{ enabled: boolean }>("/me/cloud-ai", { enabled });
+      confirmedCloudAI.current = pref.enabled;
       setCloudAI(pref.enabled);
+      setCloudPreferenceReady(true);
+      setCloudConsentOpen(false);
     } catch (error) {
       setCloudError(friendlyError(error));
     } finally {
+      preferencePending.current = false;
       setCloudBusy(false);
     }
+  };
+
+  const requestCloudMode = () => {
+    if (loading || historyLoading || activeStream.current || cloudLoading || preferencePending.current || !cloudAvailable || cloudAI) return;
+    setCloudError("");
+    setCloudConsentOpen(true);
   };
 
   useEffect(() => {
@@ -111,7 +138,8 @@ export default function ChatView({ paperId }: { paperId: string }) {
 
   const send = async (text?: string) => {
     const msg = (text ?? input).trim();
-    if (msg.length < 2 || loading || historyLoading) return;
+    if (msg.length < 2 || loading || historyLoading || activeStream.current || cloudLoading || preferencePending.current || !cloudPreferenceReady) return;
+    const answerMode = confirmedCloudAI.current ? "cloud" : "local";
     followBottom.current = true;
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: msg }]);
@@ -143,7 +171,7 @@ export default function ChatView({ paperId }: { paperId: string }) {
       const res = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Owner-Token": requestToken },
-        body: JSON.stringify({ paper_id: paperId, message: msg }),
+        body: JSON.stringify({ paper_id: paperId, message: msg, answer_mode: answerMode }),
         signal: controller.signal,
       });
       if (res.status === 410) {
@@ -257,7 +285,7 @@ export default function ChatView({ paperId }: { paperId: string }) {
       }
       // stream endpoint unavailable → classic request
       try {
-        const r = await api.post<ChatResponse>("/chat", { paper_id: paperId, message: msg }, controller.signal);
+        const r = await api.post<ChatResponse>("/chat", { paper_id: paperId, message: msg, answer_mode: answerMode }, controller.signal);
         if (controller.signal.aborted) return;
         setMessages((prev) => [...prev.slice(0, -1), {
           id: r.message_id ?? undefined, role: "assistant", content: r.answer,
@@ -319,35 +347,70 @@ export default function ChatView({ paperId }: { paperId: string }) {
       {historyError && <p className="mb-2 text-xs text-amber-200" role="status">{historyError}</p>}
       {fileError && <p className="mb-2 text-xs text-rose-300" role="alert">{fileError}</p>}
 
-      <div className="glass-soft mb-3 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="glass-soft mb-3 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-semibold text-white">
-            {cloudAI ? <Cloud size={16} className="text-azure-300" /> : <Lock size={16} className="text-iris-300" />}
-            {cloudLoading ? "Checking AI preference…" : cloudAI ? "Cloud AI enabled for this session" : "Local evidence mode"}
+            {cloudLoading || cloudBusy ? <Loader2 size={16} className="animate-spin text-iris-300" /> : cloudAI ? <Cloud size={16} className="text-azure-300" /> : <Lock size={16} className="text-iris-300" />}
+            {cloudLoading ? "Checking answer mode…" : cloudBusy ? "Saving answer mode…" : !cloudPreferenceReady ? "Choose your answer mode" : cloudAI ? "Cloud AI · this session" : "Local Evidence · this session"}
           </div>
           <p className="mt-1 max-w-2xl text-xs leading-relaxed text-dim">
-            {cloudAI
-              ? "Relevant passages and questions may be sent to Gemini or Groq. Turn this off for future questions at any time. Erasing your session does not erase provider-held copies."
-              : cloudAvailable
-                ? "Answers use local extraction. Do not enable cloud AI for confidential or personal research with unpaid Gemini: its terms allow human review and product improvement."
-                : "This instance uses local evidence answers. Your passages and questions are not sent to cloud AI."}
+            {cloudAvailable
+              ? cloudAI
+                ? "Cloud AI combines your evidence into richer answers. Questions, selected passages and recent chat context may go to Gemini or Groq. Switch to Local Evidence for future questions. Erasing your session cannot erase provider-held copies."
+                : "Local Evidence extracts answers from your paper. Cloud AI is optional for richer synthesis; review the data-sharing notice before enabling it."
+              : "Local Evidence extracts answers from your paper without sending your questions or passages to cloud AI. Cloud AI is currently unavailable on this instance."}
             {" "}<a className="text-azure-300 underline underline-offset-2" href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer">Gemini terms</a>
             {" · "}<a className="text-azure-300 underline underline-offset-2" href="https://console.groq.com/docs/your-data" target="_blank" rel="noreferrer">Groq data controls</a>
           </p>
-          {cloudError && <p className="mt-1 text-xs text-rose-300">{cloudError}</p>}
+          {cloudError && <p className="mt-1 text-xs text-rose-300" role="alert">{cloudError}</p>}
+          {!cloudPreferenceReady && !cloudLoading && (
+            <button type="button" disabled={cloudBusy || loading || historyLoading} className="mt-2 text-xs font-semibold text-azure-300 underline underline-offset-2 disabled:opacity-40" onClick={() => {
+              preferencePending.current = true;
+              setCloudLoading(true);
+              setCloudError("");
+              setCloudRetry((value) => value + 1);
+            }}>Retry answer mode</button>
+          )}
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={cloudAI}
-          aria-label="Enable cloud AI answers for this session"
-          onClick={toggleCloudAI}
-          disabled={cloudBusy || cloudLoading || !cloudAvailable}
-          className={`inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-full px-4 text-xs font-semibold transition-colors ${cloudAI ? "border border-azure-400/35 bg-azure-500/20 text-azure-100" : "btn-ghost"}`}
-        >
-          {cloudBusy || cloudLoading ? <Loader2 size={14} className="animate-spin" /> : cloudAI ? <Check size={14} /> : <Cloud size={14} />}
-          {cloudAI ? "Cloud AI on" : cloudAvailable ? "Enable cloud AI" : "Local mode"}
-        </button>
+        <div role="group" aria-label="Answer mode" aria-busy={cloudBusy || cloudLoading} className="flex shrink-0 rounded-2xl border border-white/10 bg-black/20 p-1">
+          <button
+            type="button"
+            aria-pressed={cloudPreferenceReady && !cloudAI}
+            onClick={() => selectAnswerMode(false)}
+            disabled={loading || historyLoading || cloudBusy || cloudLoading}
+            className={`inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-xs font-semibold transition-colors disabled:cursor-wait disabled:opacity-60 ${cloudPreferenceReady && !cloudAI ? "bg-iris-500/20 text-iris-100 ring-1 ring-inset ring-iris-400/30" : "text-dim hover:bg-white/5 hover:text-white"}`}
+          >
+            <Lock size={14} />
+            Local Evidence
+          </button>
+          <button
+            type="button"
+            aria-pressed={cloudPreferenceReady && cloudAI}
+            aria-label="Cloud AI: allow questions and selected passages to be sent to Gemini or Groq"
+            onClick={requestCloudMode}
+            disabled={loading || historyLoading || cloudBusy || cloudLoading || !cloudAvailable}
+            className={`inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-xs font-semibold transition-colors disabled:opacity-40 ${cloudPreferenceReady && cloudAI ? "bg-azure-500/20 text-azure-100 ring-1 ring-inset ring-azure-400/30" : "text-dim hover:bg-white/5 hover:text-white"}`}
+          >
+            <Cloud size={14} />
+            Cloud AI
+          </button>
+        </div>
+        </div>
+        {cloudConsentOpen && (
+          <div className="mt-3 border-t border-white/10 pt-3" role="region" aria-label="Cloud AI data-sharing consent">
+            <p className="text-sm font-semibold text-white">Before enabling Cloud AI</p>
+            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-dim">
+              Your questions, selected paper passages and recent chat context may be sent to Gemini or Groq. Unpaid Gemini may use this data for product improvement and human review: keep confidential or personal research in Local Evidence. Erasing your ScholarScout session cannot recall provider-held copies.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" onClick={() => selectAnswerMode(true)} disabled={loading || historyLoading || cloudBusy || cloudLoading || !cloudAvailable} className="btn-primary inline-flex min-h-10 items-center gap-2 px-4 text-xs disabled:opacity-40">
+                {cloudBusy ? <Loader2 size={14} className="animate-spin" /> : <Cloud size={14} />} Enable Cloud AI
+              </button>
+              <button type="button" onClick={() => setCloudConsentOpen(false)} disabled={cloudBusy} className="btn-ghost min-h-10 px-4 text-xs disabled:opacity-40">Keep Local Evidence</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* messages */}
@@ -380,7 +443,7 @@ export default function ChatView({ paperId }: { paperId: string }) {
       {/* suggestions */}
       <div className="mb-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {suggestions.slice(0, 5).map((s) => (
-          <button key={s} disabled={loading || historyLoading} onClick={() => send(s)} className="chip whitespace-nowrap hover:bg-white/10 disabled:opacity-40">
+          <button key={s} disabled={loading || historyLoading || cloudLoading || cloudBusy || !cloudPreferenceReady} onClick={() => send(s)} className="chip whitespace-nowrap hover:bg-white/10 disabled:opacity-40">
             {s}
           </button>
         ))}
@@ -398,7 +461,7 @@ export default function ChatView({ paperId }: { paperId: string }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
         />
-        <button type="submit" aria-label="Send question" disabled={loading || historyLoading || input.trim().length < 2} className="btn-primary shrink-0 p-2.5 disabled:opacity-40">
+        <button type="submit" aria-label="Send question" disabled={loading || historyLoading || cloudLoading || cloudBusy || !cloudPreferenceReady || input.trim().length < 2} className="btn-primary shrink-0 p-2.5 disabled:opacity-40">
           <SendHorizonal size={16} />
         </button>
       </form>

@@ -4,6 +4,26 @@ Updated **11 October 2026**. The [public repository](https://github.com/pranjals
 is deployed on Render Free at **[scholarscout-dskr.onrender.com](https://scholarscout-dskr.onrender.com)**.
 The results below cover release commit `9014707` and the initial live verification.
 
+## Cloud mode update awaiting deployment verification
+
+The current Blueprint enables operator-approved cloud answers and the
+`gemini,groq` chain. `GEMINI_API_KEY` and `GROQ_API_KEY` are declared with
+`sync: false` for private Render injection; no credentials are in source.
+Visitors retain local mode by default and must opt in before selecting a cloud
+answer. The initial live results below were measured with cloud processing off.
+They are not a verification of the new cloud configuration or provider keys.
+CI remains offline and provider-free; live opt-in, provider attribution, local
+selection and consent revocation must be checked after the new deployment.
+
+The updated offline smoke gate passed **41 checks** locally with disposable
+storage and zero live cloud calls. It verifies that fresh owners start with
+cloud consent and connected lookups off, unavailable cloud requests are
+rejected, explicit local selection returns extractive answers, and the original
+private-session retrieval and erasure checks still pass. The configuration gate
+also verified the approved cloud flags, provider chain, private key descriptors
+and unchanged free-instance resource limits. Its exported container environment
+contains no provider or application-secret values.
+
 ## Verified in GitHub CI and on Render
 
 All three jobs in [Release checks](https://github.com/pranjalsinggh/ScholarScout/actions/runs/38128516294)
@@ -97,9 +117,10 @@ checkout. Advisory results are dated checks; CI scans again on changes and weekl
 The Blueprint uses one service, instance and worker, a generated secret,
 ephemeral data and a free 512 MB compute plan with reduced resource limits.
 Free services can sleep and lose temporary research; this is a demo workload
-profile. It has no persistent research disk or database. Cloud answers default
-to disabled. Enabling a provider requires
-operator approval of its data policy and a visitor's separate opt-in. Session
+profile. It has no persistent research disk or database. The current Blueprint
+enables cloud capability with operator approval and private provider-key injection.
+Visitors still default to local answers; cloud answers require their separate opt-in.
+Session
 erasure cannot recall copies already sent to an external provider.
 
 Logical user-data isolation and fair admission are tested. Shared hardware,

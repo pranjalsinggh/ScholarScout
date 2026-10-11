@@ -201,14 +201,14 @@ def repair_evidence_citations(text: str, passage_count: int) -> str:
     return text.strip()
 
 
-def build_chain(owner: str = "") -> list[str]:
-    """Configured providers in the user's preferred order (cooldown-aware)."""
+def configured_chain() -> list[str]:
+    """Operator-approved, keyed providers, independent of temporary quotas.
+
+    Availability in the UI describes configuration. Provider cooldowns and
+    exhausted budgets affect an individual answer, which can fall back locally.
+    """
     if not settings.cloud_ai_enabled or (settings.production and not settings.cloud_provider_data_approved):
         return []
-    if owner:
-        from app.security.session import cloud_ai_allowed
-        if not cloud_ai_allowed(owner):
-            return []
     configured = {
         "gemini": bool(settings.gemini_api_key),
         "groq": bool(settings.groq_api_key),
@@ -219,6 +219,20 @@ def build_chain(owner: str = "") -> list[str]:
         name = name.strip().lower()
         if name in configured and configured[name] and name not in chain:
             chain.append(name)
+    return chain
+
+
+def cloud_ai_available() -> bool:
+    return bool(configured_chain())
+
+
+def build_chain(owner: str = "") -> list[str]:
+    """Configured providers allowed by this session (cooldown-aware)."""
+    chain = configured_chain()
+    if owner:
+        from app.security.session import cloud_ai_allowed
+        if not cloud_ai_allowed(owner):
+            return []
     # Retry-After, hourly budgets and repeated-failure cooldowns are hard
     # skips. Retrying a cooled provider on every question causes 429 storms.
     now = time.time()
@@ -550,15 +564,15 @@ def synthesize_stream(query: str, passages: list[Retrieved],
             if not _reserve_provider_call(provider, owner):
                 continue
             if provider == "gemini":
-                it = _gemini_stream(query, context, style_hint=hint)
+                it = _gemini_stream(query, convo + context, style_hint=hint)
             elif provider == "groq":
-                it = _openai_stream(query, context,
+                it = _openai_stream(query, convo + context,
                                     "https://api.groq.com/openai/v1",
                                     settings.groq_api_key or "",
                                     settings.groq_model,
                                     reasoning_effort="low", style_hint=hint)
             elif provider == "openai":
-                it = _openai_stream(query, context,
+                it = _openai_stream(query, convo + context,
                                     settings.openai_base_url or "https://api.openai.com/v1",
                                     settings.openai_api_key or "",
                                     settings.openai_model, style_hint=hint)

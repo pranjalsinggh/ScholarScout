@@ -26,6 +26,7 @@ def main():
             "SERVE_FRONTEND": "1", "DEMO_AUTOLOAD": "0",
             "FRONTEND_DIST_DIR": str(root / "frontend" / "dist"),
             "GEMINI_API_KEY": "", "GROQ_API_KEY": "", "OPENAI_API_KEY": "",
+            "LLM_PROVIDER_CHAIN": "gemini,groq",
             "OPENALEX_API_KEY": "", "NEWS_API_KEY": "",
         })
         sys.path.insert(0, str(root / "backend"))
@@ -34,7 +35,8 @@ def main():
         from app.main import app
         from app.security.owner import new_token
         from app.database.database import SessionLocal, engine
-        from app.models.entities import ChatMessage, Paper
+        from app.models.entities import ChatMessage, OwnerSession, Paper
+        from app.security.session import cloud_ai_allowed
 
         def pdf(text, pages=1):
             doc = fitz.open()
@@ -69,8 +71,19 @@ def main():
             checks += 4
             alice, bob = new_token(), new_token()
             ah, bh = {"X-Owner-Token": alice}, {"X-Owner-Token": bob}
+            # Offline CI intentionally has no provider credentials, regardless of
+            # the live Blueprint. Fresh owners must remain local and independent.
+            for headers in (ah, bh):
+                assert client.get("/api/me/cloud-ai", headers=headers).json() == {"enabled": False, "available": False}
+                assert client.get("/api/me/research-lookups", headers=headers).json() == {"enabled": False}
+                checks += 2
             assert client.post("/api/me/cloud-ai", headers=ah, json={"enabled": True}).status_code == 409
-            checks += 1
+            assert client.post("/api/me/cloud-ai", headers=ah, json={"enabled": False}).json() == {"enabled": False}
+            with SessionLocal() as db:
+                sessions = db.query(OwnerSession).all()
+                assert len(sessions) == 2 and all(not row.cloud_ai_opt_in for row in sessions)
+                assert all(not cloud_ai_allowed(row.owner) for row in sessions)
+            checks += 4
             papers = []
             for headers, text in [(ah, "Private Alice Research\nAbstract\nAttention mechanisms select relevant observations.\nMethods\nWe compare observations using controlled validation.\nResults\nValidation supported the attention method."),
                                   (bh, "Private Bob Manuscript\nAbstract\nQuantum oscillations reveal secret measurement patterns.\nMethods\nWe study oscillations using private chamber records.\nResults\nThe chamber observations supported the quantum argument.")]:
@@ -106,6 +119,12 @@ def main():
             assert response.json()["mode"] == "extractive"
             assert "quantum" not in response.json()["answer"].lower()
             checks += 3
+            local = client.post("/api/chat", headers=ah,
+                json={"paper_id": aid, "message": "What method does the document use?", "answer_mode": "local"})
+            assert local.status_code == 200 and local.json()["mode"] == "extractive"
+            assert client.post("/api/chat", headers=ah,
+                json={"paper_id": aid, "message": "What method does the document use?", "answer_mode": "cloud"}).status_code == 409
+            checks += 2
             assert client.delete("/api/me/purge", headers=ah).status_code == 200
             assert client.get("/api/papers", headers=ah).status_code == 410
             assert client.get(f"/api/papers/{bid}", headers=bh).status_code == 200

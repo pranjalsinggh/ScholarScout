@@ -1,6 +1,8 @@
 """Pydantic schemas for API requests/responses."""
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -87,6 +89,7 @@ class EvidenceCard(BaseModel):
 class ChatRequest(BaseModel):
     paper_id: str
     message: str = Field(min_length=2, max_length=1000)
+    answer_mode: Literal["local", "cloud"] | None = None
 
 
 class ChatResponse(BaseModel):

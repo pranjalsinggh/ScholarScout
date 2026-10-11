@@ -88,3 +88,77 @@ def test_generated_answer_requires_real_evidence_card_ids():
     assert valid_evidence_citations("It uses attention [1].", 2)
     assert not valid_evidence_citations("It uses attention [3].", 2)
     assert not valid_evidence_citations("It uses attention.", 2)
+
+
+@pytest.mark.parametrize("provider", ["gemini", "groq", "openai"])
+def test_stream_payload_matches_classic_bounded_history_and_evidence(monkeypatch, provider):
+    """Exercise real adapters with fake HTTP; history must reach each payload."""
+    import json
+
+    from app.rag.retriever import Retrieved
+    from app.security import session
+    from app.services import usage
+    from app.services.scholarly import common
+
+    llm = _configure_llm(monkeypatch, **{
+        provider.upper() + "_API_KEY": "offline-test-key", "LLM_PROVIDER_CHAIN": provider})
+    monkeypatch.setattr(session, "cloud_ai_allowed", lambda owner: True)
+    monkeypatch.setattr(common, "cache_get", lambda key: None)
+    monkeypatch.setattr(common, "cache_set", lambda *a, **kw: None)
+    monkeypatch.setattr(usage, "record_usage", lambda *a, **kw: None)
+    captured = []
+    answer = "Calibration uses a quantum reference [1]."
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            if provider == "gemini":
+                return {"candidates": [{"content": {"parts": [{"text": answer}]}}]}
+            return {"choices": [{"message": {"content": answer}}]}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def iter_lines(self):
+            data = (self.json() if provider == "gemini" else
+                    {"choices": [{"delta": {"content": answer}}]})
+            yield "data: " + json.dumps(data)
+            if provider != "gemini":
+                yield "data: [DONE]"
+
+    def fake_request(*args, **kwargs):
+        captured.append(kwargs["json"])
+        return Response()
+
+    monkeypatch.setattr(llm.httpx, "post", fake_request)
+    monkeypatch.setattr(llm.httpx, "stream", fake_request)
+    passages = [Retrieved(7, "paper", "Quantum calibration", "Methods", 2,
+                          "Calibration uses a stable quantum reference.", 0.9)]
+    history = ["User: old turn must be excluded", "User: compare calibration",
+               "Assistant: the reference controls the comparison"]
+    arguments = {"abstract": "a" * 1300, "history": history, "owner": "a" * 32,
+                 "style_hint": "Use simple language."}
+    assert llm.synthesize("What changes?", passages, "Quantum calibration", **arguments) == (answer, provider)
+    stream = llm.synthesize_stream("What changes?", passages, **arguments)
+    assert stream and stream[0] == provider and "".join(stream[1]) == answer
+    assert len(captured) == 2
+    if provider == "gemini":
+        prompts = [payload["contents"][0]["parts"][0]["text"] for payload in captured]
+        systems = [payload["system_instruction"]["parts"][0]["text"] for payload in captured]
+    else:
+        prompts = [payload["messages"][1]["content"] for payload in captured]
+        systems = [payload["messages"][0]["content"] for payload in captured]
+    assert prompts[0] == prompts[1]
+    assert "Recent conversation so far:" in prompts[1]
+    assert all(turn in prompts[1] for turn in history[-2:])
+    assert history[0] not in prompts[1]
+    assert "a" * 1200 in prompts[1] and "a" * 1201 not in prompts[1]
+    assert "[1] (paper:" in prompts[1] and passages[0].text in prompts[1]
+    assert "Question: What changes?" in prompts[1] and "Use simple language." in prompts[1]
+    assert systems == [llm.SYSTEM_PROMPT] * 2
+    assert "untrusted source material" in systems[1]

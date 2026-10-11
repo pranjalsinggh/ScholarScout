@@ -24,12 +24,16 @@ def main() -> None:
     assert service["plan"] == "free", "This release must not create a paid Render service"
     assert "maxShutdownDelaySeconds" not in service, "Free Render services do not support custom shutdown delay"
     values = {item["key"]: item for item in service["envVars"]}
+    assert len(values) == len(service["envVars"]), "Environment keys must be unique"
     assert values["SCHOLARSCOUT_SECRET_KEY"].get("generateValue") is True
     for key, value in {"APP_ENV": "production", "SERVE_FRONTEND": "1",
-                       "CLOUD_AI_ENABLED": "0", "CLOUD_PROVIDER_DATA_APPROVED": "0",
+                       "CLOUD_AI_ENABLED": "1", "CLOUD_PROVIDER_DATA_APPROVED": "1",
+                       "LLM_PROVIDER_CHAIN": "gemini,groq",
                        "TRUST_RENDER_EDGE": "1",
                        "WEB_CONCURRENCY": "1", "SCHOLARSCOUT_DATA_DIR": "/tmp/scholarscout"}.items():
         assert values[key].get("value") == value, key
+    for key in ("GEMINI_API_KEY", "GROQ_API_KEY"):
+        assert values[key] == {"key": key, "sync": False}, f"{key}: inject privately in Render"
     for key in ("ANALYSIS_WORKERS", "MAX_CONCURRENT_INGESTIONS", "INDEX_BUILD_WORKERS"):
         assert values[key].get("value") == "1", f"{key}: serialize expensive work on free compute"
     limits = {

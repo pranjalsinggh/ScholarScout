@@ -28,9 +28,16 @@ services:
       - key: DEMO_AUTOLOAD
         value: "0"
       - key: CLOUD_AI_ENABLED
-        value: "0"
+        value: "1"
       - key: CLOUD_PROVIDER_DATA_APPROVED
-        value: "0"
+        value: "1"
+      - key: LLM_PROVIDER_CHAIN
+        value: gemini,groq
+      # Inject credentials privately in Render. Visitors still start in local mode.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
       - key: RETENTION_HOURS
         value: "1"
       - key: MAX_UPLOAD_MB

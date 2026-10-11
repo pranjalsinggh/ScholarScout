@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Literal
 
 from app.database.database import SessionLocal
 from app.models.entities import Paper
@@ -393,13 +394,21 @@ def _paper_insight_answer(query: str, db, paper: Paper) -> Answer | None:
                   insufficient=not bool(evidence) or (wants_support and not bool(support)))
 
 
-def _eli5_answer(query: str, db, paper: Paper, owner: str = "") -> Answer | None:
+def _eli5_answer(query: str, db, paper: Paper, owner: str = "",
+                 use_llm: bool = True) -> Answer | None:
     """'Explain it simply' - reuses the ELI5 engine inside the chat."""
     if not ELI5_RE.search(query):
         return None
-    from app.services.analysis.eli5 import build_eli5
-    payload = build_eli5(db, paper, owner=owner)
-    fields = payload.get("fields") or {}
+    from app.services.analysis.xray import build_xray
+    if use_llm:
+        from app.services.analysis.eli5 import build_eli5
+        fields = build_eli5(db, paper, owner=owner).get("fields") or {}
+    else:
+        # Local is a per-answer promise even if this session previously used
+        # cloud explanations. Do not enter the cloud rewrite/cache path.
+        from app.services.analysis.eli5 import _deterministic_eli5
+        fields = _deterministic_eli5(build_xray(db, paper))
+        fields.pop("__intro__", None)
     if not fields:
         return None
     order = [("main_claim", "What the document says"),
@@ -415,7 +424,6 @@ def _eli5_answer(query: str, db, paper: Paper, owner: str = "") -> Answer | None
     if not parts:
         return None
     text = "Here's the simple version:\n" + "\n".join(f"• {p}" for p in parts[:4])[:1200]
-    from app.services.analysis.xray import build_xray
     xray = build_xray(db, paper)
     evidence = [Retrieved(chunk_id=0, paper_id=paper.id, paper_title=paper.title or "Paper",
                           section=f.evidence_section, page=f.evidence_page,
@@ -694,7 +702,8 @@ def _resolve_followup(query: str, paper_ids, owner: str = "", token: str = ""):
 
 
 def _resolve_meta(query: str, paper_ids, db=None, token: str = "",
-                  owner: str = "", prefer_llm: bool = False):
+                  owner: str = "", prefer_llm: bool = False,
+                  use_llm: bool = True):
     """Intent routing shared by sync and streaming paths.
     Order: author -> stats -> insight -> post-publication -> ELI5 -> abstract.
 
@@ -725,13 +734,13 @@ def _resolve_meta(query: str, paper_ids, db=None, token: str = "",
             postpub = _postpub_answer(query, db, paper)
             if postpub:
                 return postpub, paper, None
-            eli5 = _eli5_answer(query, db, paper, owner=owner)
+            eli5 = _eli5_answer(query, db, paper, owner=owner, use_llm=use_llm)
             if eli5:
                 if prefer_llm:
                     soft = soft or eli5
                 else:
                     return eli5, paper, None
-        meta = _abstract_answer(query, paper_ids, db=db, owner=owner)
+        meta = _abstract_answer(query, paper_ids, db=db, owner=owner, use_llm=use_llm)
         return meta, paper, soft
     finally:
         if owns_db:
@@ -805,12 +814,14 @@ def _expand_query(query: str, paper: Paper | None = None) -> str:
     return f"{query} {tail}" if tail else query
 
 
-def answer_question(query: str, paper_ids=None, owner: str = "", token: str = "") -> Answer:
+def answer_question(query: str, paper_ids=None, owner: str = "", token: str = "",
+                    answer_mode: Literal["local", "cloud"] | None = None) -> Answer:
     author = _author_answer(query, paper_ids)
     if author:
         return author
-    llm_on = llm_configured(owner)
-    meta, paper, soft = _resolve_meta(query, paper_ids, owner=owner, prefer_llm=llm_on)
+    llm_on = answer_mode != "local" and llm_configured(owner)
+    meta, paper, soft = _resolve_meta(query, paper_ids, owner=owner,
+                                     prefer_llm=llm_on, use_llm=llm_on)
     if meta:
         return meta
     follow, f_passages = _resolve_followup(query, paper_ids, owner, token)
@@ -920,7 +931,8 @@ def _recent_history(db, paper_id: str, owner: str, token: str, limit: int = 4) -
     return out
 
 
-def stream_answer_events(query: str, paper_ids=None, owner: str = "", token: str = ""):
+def stream_answer_events(query: str, paper_ids=None, owner: str = "", token: str = "",
+                         answer_mode: Literal["local", "cloud"] | None = None):
     """SSE payload generator: evidence first, then answer tokens. Persists
     encrypted, mirroring the non-streaming /chat route.
 
@@ -954,11 +966,12 @@ def stream_answer_events(query: str, paper_ids=None, owner: str = "", token: str
         db = SessionLocal()
         ans: Answer | None = None
         passages: list = []
-        llm_on = llm_configured(owner)
+        llm_on = answer_mode != "local" and llm_configured(owner)
 
         # 1. intent routes: author → stats → insight/postpub/ELI5 → abstract
         meta, paper, soft = _resolve_meta(query, paper_ids, db=db, token=token,
-                                          owner=owner, prefer_llm=llm_on)
+                                          owner=owner, prefer_llm=llm_on,
+                                          use_llm=llm_on)
         routed = False
         if meta:
             ans = meta
