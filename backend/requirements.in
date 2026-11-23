@@ -1,5 +1,5 @@
 # Direct production dependencies. requirements.lock.txt pins the complete graph.
-fastapi==0.141.1
+fastapi==0.142.2
 uvicorn==0.53.0
 python-multipart==0.0.32
 pydantic==2.13.5
